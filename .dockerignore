@@ -1,0 +1,8 @@
+.git
+.gitignore
+README.md
+DEPLOYMENT.md
+k8s
+.aws-pipeline
+*.md
+.DS_Store
