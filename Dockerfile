@@ -11,6 +11,11 @@ COPY nginx.conf /etc/nginx/conf.d/default.conf
 # Ship the pre-built app
 COPY dist/ /usr/share/nginx/html/
 
+# Give the non-root nginx user write access to the directories nginx needs at runtime
+RUN chown -R nginx:nginx /var/cache/nginx /var/log/nginx /etc/nginx/conf.d && \
+    touch /var/run/nginx.pid && \
+    chown nginx:nginx /var/run/nginx.pid
+
 EXPOSE 3000
 
 # nginx:alpine already runs as non-root (nginx user) for worker processes;
