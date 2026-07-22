@@ -1,0 +1,47 @@
+version: 0.2
+
+phases:
+  install:
+    runtime-versions:
+      docker: 20
+    commands:
+      - echo "Installing kubectl..."
+      - curl -LO "https://dl.k8s.io/release/v1.29.0/bin/linux/amd64/kubectl"
+      - chmod +x ./kubectl && mv ./kubectl /usr/local/bin/kubectl
+      - kubectl version --client
+
+  pre_build:
+    commands:
+      - echo "Logging in to Amazon ECR..."
+      - aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com
+      - REPO_URI=$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPO_NAME
+      - IMAGE_TAG=$(echo $CODEBUILD_RESOLVED_SOURCE_VERSION | cut -c1-8)
+      - echo "Building image $REPO_URI:$IMAGE_TAG"
+
+  build:
+    commands:
+      - echo "Build started on $(date)"
+      - docker build -t $REPO_URI:$IMAGE_TAG -t $REPO_URI:latest .
+
+  post_build:
+    commands:
+      - echo "Pushing image to ECR..."
+      - docker push $REPO_URI:$IMAGE_TAG
+      - docker push $REPO_URI:latest
+
+      - echo "Updating kubeconfig for EKS cluster $EKS_CLUSTER_NAME..."
+      - aws eks update-kubeconfig --region $AWS_REGION --name $EKS_CLUSTER_NAME
+
+      - echo "Deploying to EKS..."
+      - sed -i "s|887514555748.dkr.ecr.ap-south-1.amazonaws.com/brain-tasks-app:latest|$REPO_URI:$IMAGE_TAG|g" k8s/deployment.yaml
+      - kubectl apply -f k8s/deployment.yaml
+      - kubectl apply -f k8s/service.yaml
+      - kubectl rollout status deployment/brain-tasks-app --timeout=120s
+
+      - echo "Fetching LoadBalancer endpoint..."
+      - kubectl get svc brain-tasks-app-svc -o wide
+
+artifacts:
+  files:
+    - k8s/deployment.yaml
+    - k8s/service.yaml
